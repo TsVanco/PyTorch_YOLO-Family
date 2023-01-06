@@ -89,7 +89,7 @@ def parse_args():
                         help='NMS threshold')
 
     # dataset
-    parser.add_argument('--root', default='/mnt/share/ssd2/dataset',
+    parser.add_argument('--root', default='/home/tsvanco/OD/datasets',
                         help='data root')
     parser.add_argument('-d', '--dataset', default='coco',
                         help='coco, widerface, crowdhuman')
