@@ -36,11 +36,11 @@ from evaluator.vocapi_evaluator import VOCAPIEvaluator
 def parse_args():
     parser = argparse.ArgumentParser(description='YOLO Detection')
     # basic
-    parser.add_argument('--cuda', action='store_true', default=False,
+    parser.add_argument('--cuda', action='store_false', default=True,
                         help='use cuda.')
-    parser.add_argument('--batch_size', default=16, type=int, 
+    parser.add_argument('--batch_size', default=16 // 2, type=int,
                         help='Batch size for training')
-    parser.add_argument('--lr', default=1e-3, type=float, 
+    parser.add_argument('--lr', default=1e-3 / 2, type=float,
                         help='initial learning rate')
     parser.add_argument('--img_size', type=int, default=640,
                         help='The upper bound of warm-up')
@@ -54,17 +54,17 @@ def parse_args():
                         help='The upper bound of warm-up')
     parser.add_argument('--start_epoch', type=int, default=0,
                         help='start epoch to train')
-    parser.add_argument('-r', '--resume', default=None, type=str, 
+    parser.add_argument('-r', '--resume', default=None, type=str,
                         help='keep training')
-    parser.add_argument('--num_workers', default=8, type=int, 
+    parser.add_argument('--num_workers', default=8 // 2, type=int,
                         help='Number of workers used in dataloading')
-    parser.add_argument('--num_gpu', default=1, type=int, 
+    parser.add_argument('--num_gpu', default=1, type=int,
                         help='Number of GPUs to train')
     parser.add_argument('--eval_epoch', type=int,
-                            default=10, help='interval between evaluations')
+                        default=10, help='interval between evaluations')
     parser.add_argument('--tfboard', action='store_true', default=False,
                         help='use tensorboard')
-    parser.add_argument('--save_folder', default='weights/', type=str, 
+    parser.add_argument('--save_folder', default='weights/', type=str,
                         help='path to save weight')
     parser.add_argument('--vis_data', action='store_true', default=False,
                         help='visualize images and labels.')
@@ -93,7 +93,7 @@ def parse_args():
                         help='data root')
     parser.add_argument('-d', '--dataset', default='coco',
                         help='coco, widerface, crowdhuman')
-    
+
     # Loss
     parser.add_argument('--loss_obj_weight', default=1.0, type=float,
                         help='weight of obj loss')
@@ -108,7 +108,7 @@ def parse_args():
     parser.add_argument('--no_warmup', action='store_true', default=False,
                         help='do not use warmup')
     parser.add_argument('-ms', '--multi_scale', action='store_true', default=False,
-                        help='use multi-scale trick')      
+                        help='use multi-scale trick')
     parser.add_argument('--ema', action='store_true', default=False,
                         help='use ema training trick')
     parser.add_argument('--mosaic', action='store_true', default=False,
@@ -125,9 +125,9 @@ def parse_args():
     # DDP train
     parser.add_argument('-dist', '--distributed', action='store_true', default=False,
                         help='distributed training')
-    parser.add_argument('--local_rank', type=int, default=0, 
+    parser.add_argument('--local_rank', type=int, default=0,
                         help='local_rank')
-    parser.add_argument('--sybn', action='store_true', default=False, 
+    parser.add_argument('--sybn', action='store_true', default=False,
                         help='use sybn.')
 
     return parser.parse_args()
@@ -163,21 +163,22 @@ def train():
     train_size = val_size = args.img_size
 
     # dataset and evaluator
-    dataset, evaluator, num_classes = build_dataset(args, train_size, val_size, device)
+    dataset, evaluator, num_classes = build_dataset(
+        args, train_size, val_size, device)
     # dataloader
     dataloader = build_dataloader(args, dataset, detection_collate)
     # criterioin
     criterion = build_criterion(args, cfg, num_classes)
-    
+
     print('Training model on:', args.dataset)
     print('The dataset size:', len(dataset))
     print("----------------------------------------------------------")
 
     # build model
-    net = build_model(args=args, 
-                      cfg=cfg, 
-                      device=device, 
-                      num_classes=num_classes, 
+    net = build_model(args=args,
+                      cfg=cfg,
+                      device=device,
+                      num_classes=num_classes,
                       trainable=True)
     model = net
 
@@ -195,13 +196,12 @@ def train():
         FLOPs_and_Params(model=model_copy, size=train_size)
         model_copy.trainable = True
         model_copy.train()
-        
 
     # DDP
     if args.distributed and args.num_gpu > 1:
         print('using DDP ...')
         model = DDP(model, device_ids=[local_rank], output_device=local_rank)
-     
+
     # keep training
     if args.resume is not None:
         print('keep training model: %s' % (args.resume))
@@ -215,25 +215,26 @@ def train():
     if args.tfboard:
         print('use tensorboard')
         from torch.utils.tensorboard import SummaryWriter
-        c_time = time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time()))
+        c_time = time.strftime('%Y-%m-%d %H:%M:%S',
+                               time.localtime(time.time()))
         log_path = os.path.join('log/', args.dataset, c_time)
         os.makedirs(log_path, exist_ok=True)
 
         tblogger = SummaryWriter(log_path)
-    
+
     # optimizer setup
     base_lr = args.lr
     tmp_lr = args.lr
     if args.optimizer == 'sgd':
         print('use SGD with momentum ...')
-        optimizer = optim.SGD(model.parameters(), 
-                                lr=tmp_lr, 
-                                momentum=0.9,
-                                weight_decay=5e-4)
+        optimizer = optim.SGD(model.parameters(),
+                              lr=tmp_lr,
+                              momentum=0.9,
+                              weight_decay=5e-4)
     elif args.optimizer == 'adamw':
         print('use AdamW ...')
-        optimizer = optim.AdamW(model.parameters(), 
-                                lr=tmp_lr, 
+        optimizer = optim.AdamW(model.parameters(),
+                                lr=tmp_lr,
                                 weight_decay=5e-4)
 
     batch_size = args.batch_size
@@ -245,7 +246,7 @@ def train():
     # start training loop
     for epoch in range(args.start_epoch, args.max_epoch):
         if args.distributed:
-            dataloader.sampler.set_epoch(epoch)            
+            dataloader.sampler.set_epoch(epoch)
 
         # use step lr decay
         if args.lr_schedule == 'step':
@@ -263,7 +264,8 @@ def train():
                 tmp_lr = lr_min
                 set_lr(optimizer, tmp_lr)
             else:
-                tmp_lr = lr_min + 0.5*(base_lr - lr_min)*(1 + math.cos(math.pi*epoch / T_max))
+                tmp_lr = lr_min + 0.5*(base_lr - lr_min) * \
+                    (1 + math.cos(math.pi*epoch / T_max))
                 set_lr(optimizer, tmp_lr)
 
         # train one epoch
@@ -291,10 +293,10 @@ def train():
             if args.multi_scale:
                 # interpolate
                 images = torch.nn.functional.interpolate(
-                                    input=images, 
-                                    size=train_size, 
-                                    mode='bilinear', 
-                                    align_corners=False)
+                    input=images,
+                    size=train_size,
+                    mode='bilinear',
+                    align_corners=False)
 
             targets = [label.tolist() for label in targets]
             # visualize target
@@ -303,12 +305,12 @@ def train():
                 continue
             # make labels
             targets = create_labels.gt_creator(
-                                    img_size=train_size, 
-                                    strides=net.stride, 
-                                    label_lists=targets, 
-                                    anchor_size=cfg["anchor_size"], 
-                                    multi_anchor=args.multi_anchor,
-                                    center_sample=args.center_sample)
+                img_size=train_size,
+                strides=net.stride,
+                label_lists=targets,
+                anchor_size=cfg["anchor_size"],
+                multi_anchor=args.multi_anchor,
+                center_sample=args.center_sample)
             # visualize assignment
             if args.vis_targets:
                 vis_targets(images, targets, cfg["anchor_size"], net.stride)
@@ -319,10 +321,12 @@ def train():
             targets = targets.to(device)
 
             # inference
-            pred_obj, pred_cls, pred_iou, targets = model(images, targets=targets)
+            pred_obj, pred_cls, pred_iou, targets = model(
+                images, targets=targets)
 
             # compute loss
-            loss_obj, loss_cls, loss_reg, total_loss = criterion(pred_obj, pred_cls, pred_iou, targets)
+            loss_obj, loss_cls, loss_reg, total_loss = criterion(
+                pred_obj, pred_cls, pred_iou, targets)
 
             # check loss
             if torch.isnan(total_loss):
@@ -341,7 +345,8 @@ def train():
             total_loss.backward()
             if ni % args.accumulate == 0:
                 if args.grad_clip is not None:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), args.grad_clip)
                 optimizer.step()
                 optimizer.zero_grad()
 
@@ -353,23 +358,26 @@ def train():
             if iter_i % 10 == 0:
                 if args.tfboard:
                     # viz loss
-                    tblogger.add_scalar('loss obj',  loss_dict_reduced['loss_obj'].item(),  ni)
-                    tblogger.add_scalar('loss cls',  loss_dict_reduced['loss_cls'].item(),  ni)
-                    tblogger.add_scalar('loss reg',  loss_dict_reduced['loss_reg'].item(),  ni)
-                
+                    tblogger.add_scalar(
+                        'loss obj',  loss_dict_reduced['loss_obj'].item(),  ni)
+                    tblogger.add_scalar(
+                        'loss cls',  loss_dict_reduced['loss_cls'].item(),  ni)
+                    tblogger.add_scalar(
+                        'loss reg',  loss_dict_reduced['loss_reg'].item(),  ni)
+
                 t1 = time.time()
                 print('[Epoch %d/%d][Iter %d/%d][lr %.6f][Loss: obj %.2f || cls %.2f || reg %.2f || size %d || time: %.2f]'
-                        % (epoch+1, 
-                           args.max_epoch, 
-                           iter_i, 
-                           epoch_size, 
-                           tmp_lr,
-                           loss_dict['loss_obj'].item(), 
-                           loss_dict['loss_cls'].item(), 
-                           loss_dict['loss_reg'].item(), 
-                           train_size, 
-                           t1-t0),
-                        flush=True)
+                      % (epoch+1,
+                         args.max_epoch,
+                         iter_i,
+                         epoch_size,
+                         tmp_lr,
+                         loss_dict['loss_obj'].item(),
+                         loss_dict['loss_cls'].item(),
+                         loss_dict['loss_reg'].item(),
+                         train_size,
+                         t1-t0),
+                      flush=True)
 
                 t0 = time.time()
 
@@ -378,8 +386,8 @@ def train():
             if evaluator is None:
                 print('No evaluator ...')
                 print('Saving state, epoch:', epoch + 1)
-                torch.save(model_eval.state_dict(), os.path.join(path_to_save, 
-                            args.model + '_' + repr(epoch + 1) + '.pth'))  
+                torch.save(model_eval.state_dict(), os.path.join(path_to_save,
+                                                                 args.model + '_' + repr(epoch + 1) + '.pth'))
                 print('Keep training ...')
             else:
                 print('eval ...')
@@ -404,14 +412,17 @@ def train():
                         best_map = cur_map
                         # save model
                         print('Saving state, epoch:', epoch + 1)
-                        torch.save(model_eval.state_dict(), os.path.join(path_to_save, 
-                                    args.model + '_' + repr(epoch + 1) + '_' + str(round(best_map*100, 2)) + '.pth'))  
+                        torch.save(model_eval.state_dict(), os.path.join(path_to_save,
+                                                                         args.model + '_' + repr(epoch + 1) + '_' + str(round(best_map*100, 2)) + '.pth'))
                     if args.tfboard:
                         if args.dataset == 'voc':
-                            tblogger.add_scalar('07test/mAP', evaluator.map, epoch)
+                            tblogger.add_scalar(
+                                '07test/mAP', evaluator.map, epoch)
                         elif args.dataset == 'coco':
-                            tblogger.add_scalar('val/AP50_95', evaluator.ap50_95, epoch)
-                            tblogger.add_scalar('val/AP50', evaluator.ap50, epoch)
+                            tblogger.add_scalar(
+                                'val/AP50_95', evaluator.ap50_95, epoch)
+                            tblogger.add_scalar(
+                                'val/AP50', evaluator.ap50, epoch)
 
                 if args.distributed:
                     # wait for all processes to synchronize
@@ -440,38 +451,38 @@ def build_dataset(args, train_size, val_size, device):
         data_dir = os.path.join(args.root, 'VOCdevkit')
         num_classes = 20
         dataset = VOCDetection(
-                        data_dir=data_dir,
-                        img_size=train_size,
-                        transform=TrainTransforms(train_size),
-                        color_augment=ColorTransforms(train_size),
-                        mosaic=args.mosaic,
-                        mixup=args.mixup)
+            data_dir=data_dir,
+            img_size=train_size,
+            transform=TrainTransforms(train_size),
+            color_augment=ColorTransforms(train_size),
+            mosaic=args.mosaic,
+            mixup=args.mixup)
 
         evaluator = VOCAPIEvaluator(
-                        data_dir=data_dir,
-                        img_size=val_size,
-                        device=device,
-                        transform=ValTransforms(val_size))
+            data_dir=data_dir,
+            img_size=val_size,
+            device=device,
+            transform=ValTransforms(val_size))
 
     elif args.dataset == 'coco':
         data_dir = os.path.join(args.root, 'COCO')
         num_classes = 80
         dataset = COCODataset(
-                    data_dir=data_dir,
-                    img_size=train_size,
-                    image_set='train2017',
-                    transform=TrainTransforms(train_size),
-                    color_augment=ColorTransforms(train_size),
-                    mosaic=args.mosaic,
-                    mixup=args.mixup)
+            data_dir=data_dir,
+            img_size=train_size,
+            image_set='train2017',
+            transform=TrainTransforms(train_size),
+            color_augment=ColorTransforms(train_size),
+            mosaic=args.mosaic,
+            mixup=args.mixup)
 
         evaluator = COCOAPIEvaluator(
-                        data_dir=data_dir,
-                        img_size=val_size,
-                        device=device,
-                        transform=ValTransforms(val_size)
-                        )
-    
+            data_dir=data_dir,
+            img_size=val_size,
+            device=device,
+            transform=ValTransforms(val_size)
+        )
+
     else:
         print('unknow dataset !! Only support voc and coco !!')
         exit(0)
@@ -484,24 +495,24 @@ def build_dataloader(args, dataset, collate_fn=None):
     if args.distributed and args.num_gpu > 1:
         # dataloader
         dataloader = torch.utils.data.DataLoader(
-                        dataset=dataset, 
-                        batch_size=args.batch_size, 
-                        collate_fn=collate_fn,
-                        num_workers=args.num_workers,
-                        pin_memory=True,
-                        sampler=torch.utils.data.distributed.DistributedSampler(dataset)
-                        )
+            dataset=dataset,
+            batch_size=args.batch_size,
+            collate_fn=collate_fn,
+            num_workers=args.num_workers,
+            pin_memory=True,
+            sampler=torch.utils.data.distributed.DistributedSampler(dataset)
+        )
 
     else:
         # dataloader
         dataloader = torch.utils.data.DataLoader(
-                        dataset=dataset, 
-                        shuffle=True,
-                        batch_size=args.batch_size, 
-                        collate_fn=collate_fn,
-                        num_workers=args.num_workers,
-                        pin_memory=True
-                        )
+            dataset=dataset,
+            shuffle=True,
+            batch_size=args.batch_size,
+            collate_fn=collate_fn,
+            num_workers=args.num_workers,
+            pin_memory=True
+        )
     return dataloader
 
 
