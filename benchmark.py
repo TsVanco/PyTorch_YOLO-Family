@@ -13,32 +13,32 @@ from utils import fuse_conv_bn
 from models.yolo import build_model
 
 
-parser = argparse.ArgumentParser(description='Benchmark')
-# Model
-parser.add_argument('-m', '--model', default='yolov1',
-                    help='yolov1, yolov2, yolov3, yolov3_spp, yolov3_de, '
-                            'yolov4, yolo_tiny, yolo_nano')
-parser.add_argument('--fuse_conv_bn', action='store_true', default=False,
-                    help='fuse conv and bn')
-parser.add_argument('--conf_thresh', default=0.1, type=float,
-                    help='confidence threshold')
-parser.add_argument('--nms_thresh', default=0.45, type=float,
-                    help='NMS threshold')
-parser.add_argument('--center_sample', action='store_true', default=False,
-                    help='center sample trick.')
-# data root
-parser.add_argument('--root', default='/mnt/share/ssd2/dataset',
-                    help='data root')
-# basic
-parser.add_argument('-size', '--img_size', default=640, type=int or list,
-                    help='img_size')
-parser.add_argument('--weight', default=None,
-                    type=str, help='Trained state_dict file path to open')
-# cuda
-parser.add_argument('--cuda', action='store_true', default=False, 
-                    help='use cuda.')
-
-args = parser.parse_args()
+def parse_args():
+    parser = argparse.ArgumentParser(description='Benchmark')
+    # Model
+    parser.add_argument('-m', '--model', default='yolov4',
+                        help='yolov1, yolov2, yolov3, yolov3_spp, yolov3_de, '
+                        'yolov4, yolo_tiny, yolo_nano')
+    parser.add_argument('--fuse_conv_bn', action='store_true', default=False,
+                        help='fuse conv and bn')
+    parser.add_argument('--conf_thresh', default=0.1, type=float,
+                        help='confidence threshold')
+    parser.add_argument('--nms_thresh', default=0.45, type=float,
+                        help='NMS threshold')
+    parser.add_argument('--center_sample', action='store_true', default=False,
+                        help='center sample trick.')
+    # data root
+    parser.add_argument('--root', default='/home/tsvanco/OD/datasets',
+                        help='data root')
+    # basic
+    parser.add_argument('-size', '--img_size', default=608, type=int or list,
+                        help='img_size')
+    parser.add_argument('--weight', default='/home/tsvanco/OD/ckpts/yolov4_exp_43.0_63.4.pth',
+                        type=str, help='Trained state_dict file path to open')
+    # cuda
+    parser.add_argument('--cuda', action='store_false', default=True,
+                        help='use cuda.')
+    return parser.parse_args()
 
 
 def test(net, device, img_size, testset, transform):
@@ -52,7 +52,8 @@ def test(net, device, img_size, testset, transform):
     with torch.no_grad():
         for index in range(num_images):
             if index % 500 == 0:
-                print('Testing image {:d}/{:d}....'.format(index+1, num_images))
+                print(
+                    'Testing image {:d}/{:d}....'.format(index+1, num_images))
             image, _ = testset.pull_image(index)
 
             h, w, _ = image.shape
@@ -64,11 +65,11 @@ def test(net, device, img_size, testset, transform):
 
             # star time
             torch.cuda.synchronize()
-            start_time = time.perf_counter()    
+            start_time = time.perf_counter()
 
             # inference
             bboxes, scores, cls_inds = net(x)
-            
+
             # rescale
             bboxes -= offset
             bboxes /= scale
@@ -82,12 +83,12 @@ def test(net, device, img_size, testset, transform):
             if index > 1:
                 total_time += elapsed
                 count += 1
-            
+
         print('- FPS :', 1.0 / (total_time / count))
 
 
-
 if __name__ == '__main__':
+    args = parse_args()
     # get device
     if args.cuda:
         print('use cuda')
@@ -102,22 +103,23 @@ if __name__ == '__main__':
     class_indexs = coco_class_index
     num_classes = 80
     dataset = COCODataset(
-                data_dir=data_dir,
-                image_set='val2017',
-                img_size=args.img_size)
+        data_dir=data_dir,
+        image_set='val2017',
+        img_size=args.img_size)
 
     # YOLO Config
     cfg = yolo_config[args.model]
     # build model
-    model = build_model(args=args, 
-                        cfg=cfg, 
-                        device=device, 
-                        num_classes=num_classes, 
+    model = build_model(args=args,
+                        cfg=cfg,
+                        device=device,
+                        num_classes=num_classes,
                         trainable=False)
 
     # load weight
     if args.weight:
-        model.load_state_dict(torch.load(args.weight, map_location='cpu'), strict=False)
+        model.load_state_dict(torch.load(
+            args.weight, map_location='cpu'), strict=False)
         print('Finished loading model!')
     else:
         print('The path to weight file is None !')
@@ -130,9 +132,9 @@ if __name__ == '__main__':
         model = fuse_conv_bn(model)
 
     # run
-    test(net=model, 
-        img_size=args.img_size,
-        device=device, 
-        testset=dataset,
-        transform=ValTransforms(args.img_size)
-        )
+    test(net=model,
+         img_size=args.img_size,
+         device=device,
+         testset=dataset,
+         transform=ValTransforms(args.img_size)
+         )
